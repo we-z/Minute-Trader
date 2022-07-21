@@ -13,12 +13,11 @@ from email.mime.text import MIMEText
 
 from datetime import timedelta
 import os.path
+import config
 
-key = json.loads(open('AUTH/auth.txt', 'r').read())
-api = alpaca.REST(key['APCA-API-KEY-ID'], key['APCA-API-SECRET-KEY'], base_url='https://api.alpaca.markets', api_version = 'v2')
-tickers = open('TICKERS/my_tickers.txt', 'r').read()
-tickers = tickers.upper().split()
-global TICKERS 
+api = alpaca.REST(config.API_KEY, config.SECRET_KEY, base_url='https://paper-api.alpaca.markets/', api_version = 'v2')
+tickers = config.QQQ_SYMBOLS
+global TICKERS
 TICKERS = tickers
 
 def get_minute_data(tickers):
@@ -37,10 +36,16 @@ def get_minute_data(tickers):
         quotes = quotes[~quotes.index.duplicated(keep='first')]
 
         df = pd.merge(prices, quotes, how= 'inner', left_index=True, right_index= True)
-        df.to_csv('tick_data/{}.csv'.format(ticker))
-        
+        df.columns = df.columns.str.replace(' ', '')
+        df.to_csv('/home/yousefsalem00/Minute-Trader/tick_data/{}.csv'.format(ticker))
+        print(ticker)
+    
     for ticker in tickers:
-        save_min_data(ticker)
+        try:
+            save_min_data(ticker)
+        except Exception as e:
+            tickers.pop(tickers.index(ticker))
+            print("unable to save {} data - {}".format(ticker, e))
 
 def get_past30_data(tickers):
     
@@ -72,10 +77,17 @@ def get_past30_data(tickers):
         quotes = quotes[~quotes.index.duplicated(keep='first')]
         
         df = pd.merge(prices, quotes, how= 'inner', left_index=True, right_index= True)
-        df.to_csv('tick_data/{}.csv'.format(ticker))
+        df.columns = df.columns.str.replace(' ', '')
+        print(ticker)
+
+        df.to_csv('/home/yousefsalem00/Minute-Trader/tick_data/{}.csv'.format(ticker))
     
     for ticker in tickers:
-        save_30_data(ticker)
+        try:
+            save_30_data(ticker)
+        except Exception as e:
+            tickers.pop(tickers.index(ticker))
+            print("unable to save {} data - {}".format(ticker, e))
 
 def ROC(ask, timeframe):
         if timeframe == 30:
@@ -133,8 +145,8 @@ def compare_ask_ltp(tickers, timeframe):
 
 # returns which stock to buy
 def stock_to_buy(tickers, timeframe):
-        entry_buy = compare_ask_ltp(tickers, timeframe)
-        return entry_buy
+    entry_buy = compare_ask_ltp(tickers, timeframe)
+    return entry_buy
 
 def algo(tickers):
 
@@ -154,7 +166,7 @@ def buy(stock_to_buy: str):
     cashBalance = api.get_account().cash
     price_stock = api.get_latest_trade(str(stock_to_buy)).price
     targetPositionSize = ((float(cashBalance)) / (price_stock)) # Calculates required position size
-    api.submit_order(str(stock_to_buy), targetPositionSize, "buy", "market", "day") # Market order to open position    
+    api.submit_order(str(stock_to_buy), targetPositionSize, "buy", "market", "day") # Markeyt order to open position    
     
     mail_content = '''ALERT
     
@@ -196,37 +208,15 @@ def sell(current_stock):
 def check_rets(current_stock):
     # checks returns for stock in portfolio (api.get_positions()[0].symbol)
     returns = float(api.get_position(str(current_stock)).unrealized_plpc)*100
-    if (returns >= 2):
+    print("{} profit/loss percent: {}%".format(current_stock, returns))
+    if (returns >= 0.1):
         mail_content = sell(current_stock)
     else: 
         mail_content = 0              
     return mail_content
 
-def mail_alert(mail_content, sleep_time):
-    # The mail addresses and password
-    sender_address = 'sender_address'
-    sender_pass = 'sender_password'
-    receiver_address = 'receiver_address'
-
-    # Setup MIME
-    message = MIMEMultipart()
-    message['From'] = 'Trading Bot'
-    message['To'] = receiver_address
-    message['Subject'] = 'HFT Second-Bot'
-    
-    # The body and the attachments for the mail
-    message.attach(MIMEText(mail_content, 'plain'))
-
-    # Create SMTP session for sending the mail
-    session = smtplib.SMTP('smtp.gmail.com', 587)  # use gmail with port
-    session.starttls()  # enable security
-
-    # login with mail_id and password
-    session.login(sender_address, sender_pass)
-    text = message.as_string()
-    session.sendmail(sender_address, receiver_address, text)
-    session.quit()
-    time.sleep(sleep_time)
+def mail_alert(content, delay):
+    print(content)
 
 def main():
     
@@ -236,11 +226,11 @@ def main():
         mail_alert(mail_content, 0)
 
     while True:
-        
+        """
         if api.get_account().pattern_day_trader == True:
             mail_alert('Pattern day trading notification, bot is stopping now', 0)
             break
-
+        """
         tickers = TICKERS
         try:
             if api.get_clock().is_open == True:
@@ -282,6 +272,7 @@ def main():
                             pass
                         mail_content = buy(stock_to_buy)
                         mail_alert(mail_content, 5)
+                        time.sleep(3)
                         continue
 
                     else:
@@ -327,9 +318,15 @@ def main():
                 if api.get_clock().is_open == True:
                     continue
                 else:
+                    api.cancel_all_orders()
+                    api.close_all_positions()
                     mail_content = 'The market is closed now'
                     mail_alert(mail_content, 0)
                     print(mail_content)
+                    try:
+                        os.remove("FirstTrade.csv")
+                    except:
+                        pass
                     break
         except Exception as e:
             print(e)
