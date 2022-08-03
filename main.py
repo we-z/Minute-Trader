@@ -230,6 +230,10 @@ def main():
         tickers = TICKERS
         try:
             if api.get_clock().is_open == True:
+                if ((dt.now().astimezone(timezone('America/New_York')))).strftime('%H:%M:%S') >= '15:55:00':
+                    api.cancel_all_orders()
+                    api.close_all_positions()
+                    break
                 # check if we have made the first ever trade yet, if yes, timeframe = 1 min, else trade at 10:00 am
                 if os.path.isfile('FirstTrade.csv'):
                     if float(api.get_account().cash) > 10:
