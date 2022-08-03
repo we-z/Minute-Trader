@@ -7,10 +7,6 @@ import time
 import alpaca_trade_api as alpaca
 import json
 
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-
 from datetime import timedelta
 import os.path
 import config
